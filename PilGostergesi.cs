@@ -308,43 +308,51 @@ class LogitechMouse : Driver
 
     public override bool Match(HidColl c)
     {
-        return c.Vid == 0x046D && c.UsagePage == 0xFF00 && c.Usage == 0x0002 && c.OutLen >= 20 && c.InLen >= 20;
+        // Uzun koleksiyon (0xFF00:0002, rapor 0x11, 20 bayt) ya da kisa (0xFF00:0001, rapor 0x10, 7 bayt).
+        if (c.Vid != 0x046D || c.UsagePage != 0xFF00) return false;
+        if (c.Usage == 0x0002 && c.OutLen >= 20 && c.InLen >= 20) return true;
+        if (c.Usage == 0x0001 && c.OutLen >= 7 && c.InLen >= 7) return true;
+        return false;
     }
 
-    // HID++ cagrisi: cevabin parametre kismini (r[4..]) dondurur; hata/zaman asiminda null.
-    byte[] Call(HidDev d, byte idx, byte featIdx, byte fn, byte[] par)
+    // HID++ cagrisi: istegi YAZMA kanalina yazar, cevabi TUM kanallardan (kisa+uzun) okur.
+    // Bazi Logitech alicilarinda cevap, istegin yazildigi kanaldan farkli bir HID kanalina düser.
+    byte[] Call(HidDev wr, System.Collections.Generic.List<HidDev> reads, byte idx, byte featIdx, byte fn, byte[] par)
     {
-        var req = new byte[d.C.OutLen];
-        req[0] = 0x11; req[1] = idx; req[2] = featIdx; req[3] = (byte)((fn << 4) | SwId);
+        byte rpt = wr.C.OutLen >= 20 ? (byte)0x11 : (byte)0x10;
+        var req = new byte[wr.C.OutLen];
+        req[0] = rpt; req[1] = idx; req[2] = featIdx; req[3] = (byte)((fn << 4) | SwId);
         if (par != null) for (int i = 0; i < par.Length && 4 + i < req.Length; i++) req[4 + i] = par[i];
-        d.Flush();
-        if (!d.Write(req)) return null;
-        long end = Environment.TickCount + 500;
-        while (true)
+        foreach (var h in reads) h.Flush();
+        if (!wr.Write(req)) return null;
+        long end = Environment.TickCount + 600;
+        while (Environment.TickCount < end)
         {
-            var r = d.Read((int)(end - Environment.TickCount));
-            if (r == null) return null;
-            if (r.Length < 5) continue;
-            // Cihaz uzun (0x11) isteğe kısa (0x10) ya da uzun raporla cevap verebilir: ikisini de kabul et.
-            if ((r[0] == 0x11 || r[0] == 0x10) && r[1] == idx && r[2] == featIdx && r[3] == req[3])
+            foreach (var h in reads)
             {
-                var p = new byte[r.Length - 4];
-                Array.Copy(r, 4, p, 0, p.Length);
-                return p;
+                var r = h.Read(25);
+                if (r == null || r.Length < 5) continue;
+                if ((r[0] == 0x11 || r[0] == 0x10) && r[1] == idx && r[2] == featIdx && r[3] == req[3])
+                {
+                    var p = new byte[r.Length - 4];
+                    Array.Copy(r, 4, p, 0, p.Length);
+                    return p;
+                }
+                if ((r[2] == 0xFF || r[2] == 0x8F) && r.Length >= 6 && r[3] == featIdx && r[4] == req[3]) return null; // hata cevabi
             }
-            if ((r[2] == 0xFF || r[2] == 0x8F) && r.Length >= 6 && r[3] == featIdx && r[4] == req[3]) return null; // hata cevabi
         }
+        return null;
     }
 
-    bool Ping(HidDev d, byte idx)
+    bool Ping(HidDev wr, System.Collections.Generic.List<HidDev> reads, byte idx)
     {
-        var p = Call(d, idx, 0x00, 1, new byte[] { 0, 0, 0x5A }); // Root ping
+        var p = Call(wr, reads, idx, 0x00, 1, new byte[] { 0, 0, 0x5A }); // Root ping
         return p != null && p.Length >= 3 && p[2] == 0x5A && p[0] >= 2;
     }
 
-    byte FeatureIndex(HidDev d, byte idx, ushort feat)
+    byte FeatureIndex(HidDev wr, System.Collections.Generic.List<HidDev> reads, byte idx, ushort feat)
     {
-        var p = Call(d, idx, 0x00, 0, new byte[] { (byte)(feat >> 8), (byte)feat }); // Root getFeature
+        var p = Call(wr, reads, idx, 0x00, 0, new byte[] { (byte)(feat >> 8), (byte)feat }); // Root getFeature
         return (p != null && p.Length >= 1) ? p[0] : (byte)0;
     }
 
@@ -357,13 +365,13 @@ class LogitechMouse : Driver
         return 0;
     }
 
-    Reading ReadBattery(HidDev d, byte idx)
+    Reading ReadBattery(HidDev wr, System.Collections.Generic.List<HidDev> reads, byte idx)
     {
         byte f;
         // 0x1004 UnifiedBattery
-        if ((f = FeatureIndex(d, idx, 0x1004)) != 0)
+        if ((f = FeatureIndex(wr, reads, idx, 0x1004)) != 0)
         {
-            var p = Call(d, idx, f, 1, new byte[0]);
+            var p = Call(wr, reads, idx, f, 1, new byte[0]);
             if (p != null && p.Length >= 3)
             {
                 var rd = new Reading { Connected = true };
@@ -374,9 +382,9 @@ class LogitechMouse : Driver
             }
         }
         // 0x1000 BatteryStatus
-        if ((f = FeatureIndex(d, idx, 0x1000)) != 0)
+        if ((f = FeatureIndex(wr, reads, idx, 0x1000)) != 0)
         {
-            var p = Call(d, idx, f, 0, new byte[0]);
+            var p = Call(wr, reads, idx, f, 0, new byte[0]);
             if (p != null && p.Length >= 3)
             {
                 var rd = new Reading { Connected = true };
@@ -387,9 +395,9 @@ class LogitechMouse : Driver
             }
         }
         // 0x1001 BatteryVoltage
-        if ((f = FeatureIndex(d, idx, 0x1001)) != 0)
+        if ((f = FeatureIndex(wr, reads, idx, 0x1001)) != 0)
         {
-            var p = Call(d, idx, f, 0, new byte[0]);
+            var p = Call(wr, reads, idx, f, 0, new byte[0]);
             if (p != null && p.Length >= 3)
             {
                 int mv = (p[0] << 8) | p[1];
@@ -401,15 +409,35 @@ class LogitechMouse : Driver
 
     public override Reading Query(HidDev d)
     {
-        // Cihaz indeksi: once dogrudan (0xFF), sonra alici yuvalari 1..6.
-        byte[] tryIdx = { 0xFF, 1, 2, 3, 4, 5, 6 };
-        foreach (byte idx in tryIdx)
+        // Aynı fiziksel cihazın TÜM FF00 kanallarını aç (kısa + uzun); isteği uzun kanaldan yaz, cevabı hepsinden oku.
+        var opened = new System.Collections.Generic.List<HidDev>();
+        var reads = new System.Collections.Generic.List<HidDev>();
+        HidDev wr = null;
+        try
         {
-            if (!Ping(d, idx)) continue;
-            var rd = ReadBattery(d, idx);
-            if (rd != null) return rd;
+            foreach (var c in HidColl.Enumerate())
+            {
+                if (c.Vid != d.C.Vid || c.Pid != d.C.Pid || c.UsagePage != 0xFF00) continue;
+                bool ok = (c.Usage == 0x0001 && c.OutLen >= 7 && c.InLen >= 7) || (c.Usage == 0x0002 && c.OutLen >= 20 && c.InLen >= 20);
+                if (!ok) continue;
+                HidDev h;
+                if (c.Path == d.C.Path) h = d;
+                else { h = HidDev.Open(c); if (h == null) continue; opened.Add(h); }
+                reads.Add(h);
+                if (wr == null || (h.C.OutLen >= 20 && wr.C.OutLen < 20)) wr = h; // uzun kanalı tercih et
+            }
+            if (wr == null) { wr = d; if (!reads.Contains(d)) reads.Add(d); }
+
+            byte[] tryIdx = { 0xFF, 1, 2, 3, 4, 5, 6 };
+            foreach (byte idx in tryIdx)
+            {
+                if (!Ping(wr, reads, idx)) continue;
+                var rd = ReadBattery(wr, reads, idx);
+                if (rd != null) return rd;
+            }
+            return new Reading();  // alıcı var ama cihaz uykuda/kapalı
         }
-        return new Reading();  // alici var ama cihaz uykuda/kapali
+        finally { foreach (var h in opened) h.Dispose(); }
     }
 }
 
