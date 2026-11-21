@@ -1,0 +1,8 @@
+*.exe
+*.zip
+/test.txt
+/widget.log
+/tb.png
+/pencere.png
+/onizleme.png
+.claude/

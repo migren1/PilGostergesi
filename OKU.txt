@@ -1,0 +1,25 @@
+PilGöstergesi - Kablosuz kulaklık/mouse pil göstergesi
+=======================================================
+
+Kullanım:
+- PilGostergesi.exe'ye çift tıkla. Görev çubuğunun sağ alt köşesinde
+  (saatin solunda) kulaklık/mouse simgesi + pil yüzdesi çıkar.
+- Simgeye SOL tıkla: menü açılır (cihaz gizle/göster, Şimdi yenile,
+  Windows ile başlat, Çıkış).
+- "Windows ile başlat"ı açarsan her açılışta kendiliğinden gelir.
+
+Renkler: beyaz = normal, yeşil = şarj oluyor, kırmızı = %15 altı,
+gri = uykuda/kapalı.
+
+Desteklenen cihazlar:
+- HyperX Cloud III S kablosuz kulaklık
+- ATK / VXE NK kablosuz mouse (NANO dongle)
+- Logitech kablosuz mouse (G Pro X Superlight vb. - HID++)
+
+Cihazın görünmüyorsa:
+- Komut istemine şunu yaz (exe'nin olduğu klasörde):
+  PilGostergesi.exe --test
+- Yanında "test.txt" oluşur; onu bana gönder, bakarım.
+
+Not: .NET Framework gerektirir (Windows 10/11'de zaten var).
+Yönetici gerektirmez.
