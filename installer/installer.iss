@@ -29,6 +29,8 @@ Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Masaüstüne kısayol"; GroupDescription: "Ek simgeler:"
+; Varsayılan İŞARETLİ (unchecked YOK): Windows açılışında başlasın
+Name: "startup"; Description: "Windows açılışında başlat"; GroupDescription: "Seçenekler:"
 
 [Files]
 Source: "{#SrcDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
@@ -38,6 +40,8 @@ Source: "{#SrcDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion skipifsource
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+; Baslangic: uygulamanin kendi kullandigi ad ("Pil Yüzdesi.lnk") -> cift kayit olmaz
+Name: "{userstartup}\Pil Yüzdesi"; Filename: "{app}\{#AppExe}"; Tasks: startup
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "Pil Göstergesi'ni şimdi başlat"; Flags: nowait postinstall skipifsilent
