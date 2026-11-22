@@ -659,9 +659,13 @@ class TaskbarWidget : NativeWindow
 class DevWatch : NativeWindow
 {
     public Action OnChange;
+    public Action OnTaskbar;              // Explorer (yeniden) basladiginda: gorev cubugu hazir
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string msg);
+    uint taskbarCreated;
     public void Start()
     {
         CreateHandle(new CreateParams { Caption = "PGDevWatch", X = -6000, Y = -6000, Width = 0, Height = 0, Style = unchecked((int)0x80000000) });
+        taskbarCreated = RegisterWindowMessage("TaskbarCreated"); // Explorer acilista/yeniden baslayinca yayinlar
         var di = new Native.DEV_BROADCAST_DEVICEINTERFACE();
         di.Size = Marshal.SizeOf(di); di.DeviceType = 5; // DBT_DEVTYP_DEVICEINTERFACE
         IntPtr buf = Marshal.AllocHGlobal(di.Size);
@@ -671,6 +675,7 @@ class DevWatch : NativeWindow
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == 0x0219 && OnChange != null) OnChange(); // WM_DEVICECHANGE
+        else if (taskbarCreated != 0 && m.Msg == taskbarCreated && OnTaskbar != null) OnTaskbar();
         base.WndProc(ref m);
     }
 }
@@ -719,7 +724,20 @@ class TrayApp : ApplicationContext
         // Cihaz takılma/çıkarma: gelen olaylar çok olur, 1.5 sn bekleyip tek sefer yenile (pil durumu otursun).
         devTimer.Interval = 1500;
         devTimer.Tick += (s, e) => { devTimer.Stop(); Poll(); };
-        devWatch = new DevWatch { OnChange = () => { devTimer.Stop(); devTimer.Start(); } };
+        devWatch = new DevWatch
+        {
+            OnChange = () => { devTimer.Stop(); devTimer.Start(); },
+            // Explorer acilista/yeniden baslayinca gorev cubugu o an hazir olur: widget'i tazeden kur.
+            OnTaskbar = () => ui.BeginInvoke(new Action(() =>
+            {
+                TaskbarWidget.Log("TaskbarCreated alindi, widget yeniden kuruluyor");
+                try { if (widget != null) widget.DestroyHandle(); } catch { }
+                widget = null;
+                var w = new TaskbarWidget();
+                if (w.Create()) { w.OnClick = () => ui.BeginInvoke(new Action(ShowMenuAtCursor)); widget = w; }
+                if (widget != null && widget.Alive) widget.Render(lastItems);
+            }))
+        };
         devWatch.Start();
 
         mainIcon.Icon = SystemIcons.Information;
@@ -1052,13 +1070,26 @@ static class Program
             return;
         }
 
-        bool created;
-        using (var m = new Mutex(true, "PilGostergesi_tek", out created))
+        // Acilista sessiz olum olmasin: her turlu hatayi boot.log'a yaz.
+        AppDomain.CurrentDomain.UnhandledException += (s, e) => BootLog("UNHANDLED: " + e.ExceptionObject);
+        Application.ThreadException += (s, e) => BootLog("THREAD: " + e.Exception);
+        BootLog("Main basladi args=" + string.Join(" ", args));
+        try
         {
-            if (!created) return;
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new TrayApp());
+            bool created;
+            using (var m = new Mutex(true, "PilGostergesi_tek", out created))
+            {
+                if (!created) { BootLog("zaten calisiyor (mutex), cikildi"); return; }
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Application.Run(new TrayApp());
+            }
         }
+        catch (Exception ex) { BootLog("MAIN HATA: " + ex); throw; }
+    }
+
+    static void BootLog(string s)
+    {
+        try { File.AppendAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "boot.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss ") + s + "\r\n"); } catch { }
     }
 }

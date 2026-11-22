@@ -4,6 +4,13 @@ Kablosuz kulaklık ve mouse'ların pil seviyesini **Windows görev çubuğunun �
 
 ![Görev çubuğu](docs/onizleme.png)
 
+## İndir
+➡️ **[En son sürümü indir (.zip)](https://github.com/migren1/PilGostergesi/releases/latest)**
+
+İndir → klasöre çıkar → `PilGostergesi.exe`'yi çalıştır. Görev çubuğunda cihazlarının pili görünür. Kurulum gerekmez, yönetici istemez.
+
+**Açılışta otomatik başlasın:** `PilGostergesi.exe`'nin kısayolunu Başlangıç klasörüne koy — `Win+R` → `shell:startup` → sağ tık → kısayol yapıştır. (Görev Yöneticisi → Başlangıç uygulamaları listesinde görünür ve oradan açıp kapatabilirsin.)
+
 ## Özellikler
 - Görev çubuğuna gömülü, şeffaf widget (Shell_TrayWnd'ye bağlı katmanlı pencere)
 - Sol tık menüsü: cihaz gizle/göster, şimdi yenile, Windows ile başlat, çıkış
