@@ -709,6 +709,8 @@ class TrayApp : ApplicationContext
         ui.CreateControl();
         var h = ui.Handle; // UI thread'e baglanmak icin
         hidden = LoadHidden();
+        // Tek seferlik gecis: eski Run-anahtari otomatik baslatmasi varsa guvenilir Baslangic kisayoluna tasi.
+        try { bool legacy; using (var rk = Registry.CurrentUser.OpenSubKey(RunKey)) legacy = rk != null && rk.GetValue("PilGostergesi") != null; if (legacy) SetAutoStart(true); } catch { }
         menu.Opening += (s, e) => BuildMenu();
         menu.Closed += (s, e) => menuClosedAt = Environment.TickCount;
 
@@ -989,18 +991,43 @@ class TrayApp : ApplicationContext
         using (var k = Registry.CurrentUser.CreateSubKey(RegKey)) k.SetValue("Gizli", string.Join(",", hidden));
     }
 
+    static string StartupLnk()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Pil Yüzdesi.lnk");
+    }
+
     static bool AutoStart()
     {
+        // Guvenilir yol: Baslangic klasoru kisayolu. (HKCU\Run acilista throttle'a takilip baslatmayabiliyor.)
+        if (File.Exists(StartupLnk())) return true;
         using (var k = Registry.CurrentUser.OpenSubKey(RunKey)) return k != null && k.GetValue("PilGostergesi") != null;
     }
 
     static void SetAutoStart(bool on)
     {
-        using (var k = Registry.CurrentUser.CreateSubKey(RunKey))
+        // Eski Run-anahtari mekanizmasini her zaman temizle: acilista guvenilmez ve Task Manager'da
+        // Baslangic klasoru kisayoluyla birlikte CIFT gorunuyordu.
+        try { using (var k = Registry.CurrentUser.OpenSubKey(RunKey, true)) { if (k != null && k.GetValue("PilGostergesi") != null) k.DeleteValue("PilGostergesi", false); } } catch { }
+        string lnk = StartupLnk();
+        try
         {
-            if (on) k.SetValue("PilGostergesi", "\"" + Application.ExecutablePath + "\"");
-            else k.DeleteValue("PilGostergesi", false);
+            if (on)
+            {
+                Type t = Type.GetTypeFromProgID("WScript.Shell");
+                object shell = Activator.CreateInstance(t);
+                object sc = t.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { lnk });
+                Type st = sc.GetType();
+                st.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { Application.ExecutablePath });
+                st.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { Path.GetDirectoryName(Application.ExecutablePath) });
+                st.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { "Pil Yuzdesi - kablosuz cihaz pil gostergesi" });
+                st.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, sc, null);
+            }
+            else
+            {
+                if (File.Exists(lnk)) File.Delete(lnk);
+            }
         }
+        catch (Exception ex) { TaskbarWidget.Log("SetAutoStart: " + ex.Message); }
     }
 
     void Quit()
